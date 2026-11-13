@@ -69,16 +69,19 @@ plan an HTTP-only cookie migration before handling sensitive production data.
 
 ### Render deployment
 
-This repository includes a [`render.yaml`](./render.yaml) Blueprint for two services:
-`relay-api` (Node web service) and `relay-frontend` (static site).
+This repository includes a [`render.yaml`](./render.yaml) Blueprint for the
+`relay-api` Node web service. Render does not accept a static-site service in this
+Blueprint schema, so create the frontend as a separate Render Static Site.
 
 1. Push the repository to GitHub and create a new Render Blueprint from that repository.
 2. Set `MONGODB_URI` and `JWT_SECRET` on `relay-api`.
-3. Deploy `relay-api`, copy its URL, and set `CLIENT_ORIGIN` on `relay-api` to the
-   frontend URL (for example `https://relay-frontend.onrender.com`).
-4. Set `VITE_API_URL` on `relay-frontend` to the API URL (for example
-   `https://relay-api.onrender.com`), then redeploy the frontend.
-5. Confirm the API health check, frontend landing page, registration, sign-in, and
+3. Deploy `relay-api`, then create a Render **Static Site** from the same repository:
+   use build command `npm ci && npm run build --workspace frontend` and publish
+   directory `frontend/dist`.
+4. Set `VITE_API_URL` on the static site to the API URL (for example
+   `https://relay-api.onrender.com`) and redeploy the frontend.
+5. Set `CLIENT_ORIGIN` on `relay-api` to the exact frontend URL, then redeploy the API.
+6. Confirm the API health check, frontend landing page, registration, sign-in, and
    task editing.
 
 Render's free web services can sleep after inactivity. Use a paid instance or an
