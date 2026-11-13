@@ -1,91 +1,219 @@
 # Relay
 
-Relay is a momentum-aware project management workspace.
+Relay is a momentum-aware project management workspace for small teams.
+It helps teams see which work is blocked, overdue, stale, or missing a clear
+next action—then gives them the context needed to move it forward.
 
-## Development
+The product combines a calm Forest & Chalk interface with workspace-scoped
+task management, deterministic focus signals, authentication, collaboration
+data, and operational insights.
 
-1. Copy `.env.example` to `.env` and adjust the MongoDB connection if needed.
-2. Install dependencies with `npm install`.
-3. Run the frontend and backend with `npm run dev`.
+## What Relay provides
 
-The API listens on `http://localhost:3000` by default:
+- Public product landing page at `/`
+- Authenticated workspace at `/app`
+- Registration and sign-in
+- Workspace membership and tenant isolation
+- Searchable project board with task statuses and priorities
+- Focus Queue for blocked, overdue, stale, and directionless tasks
+- Task detail editing for descriptions, due dates, priorities, next actions,
+  and blocked reasons
+- Workspace insights and recent activity
+- Collaboration API foundations for notes, comments, invitations, and activity
+- Health and database-readiness endpoints
+- Responsive, keyboard-friendly interface
 
-- `GET /api/health` reports that the process is running.
-- `GET /api/readiness` reports whether MongoDB is connected.
+## Architecture
 
-The Vite frontend listens on `http://localhost:5174` because port 5173 is used by
-another local project on this machine.
+Relay is a monorepo managed with npm workspaces:
 
-## Foundation status
+```text
+relay/
+├── frontend/                 React + TypeScript + Vite client
+│   ├── src/main.tsx          Landing page and authenticated workspace UI
+│   ├── src/styles.css        Forest & Chalk design system
+│   └── vite.config.ts        Dev server and local API proxy
+├── backend/                  Node.js + Express API
+│   ├── src/app.js            Express middleware and public API setup
+│   ├── src/server.js         Local server entry point
+│   ├── src/runtime.js        Serverless-compatible application factory
+│   ├── src/auth.js           JWT authentication and workspace authorization
+│   ├── src/task-model.js     Mongoose task schema
+│   ├── src/task-routes.js    Task CRUD and validation
+│   ├── src/momentum.js       Deterministic focus-signal rules
+│   └── test/                 Node test runner coverage
+├── api/index.mjs             Vercel serverless API entry point
+├── vercel.json               Single-project Vercel routing
+└── package.json              Root workspace scripts
+```
 
-Milestone 0 establishes the repository, development scripts, environment configuration,
-health/readiness endpoints, and MongoDB connection lifecycle. Product features are
-intentionally not included until the foundation is verified.
+### Request flow
 
-Milestone 1 establishes the initial Forest & Chalk design system and responsive
-application shell. Navigation is intentionally local until application routes and
-persisted product data are introduced.
+```text
+Browser
+  │
+  ├── Vite dev proxy ────────> Express API ────────> MongoDB Atlas
+  │
+  └── Vercel same-origin ────> /api serverless entry
+                                  │
+                                  └───────────────> MongoDB Atlas
+```
 
-Milestone 2 adds persisted task CRUD through the API and a searchable three-column
-project board. The Vite development server proxies `/api` requests to the backend.
+The backend scopes protected data by the authenticated user's workspace
+membership. Task, focus, collaboration, and insight requests require a valid
+JWT and workspace authorization.
 
-Milestones 5–7 add account registration/sign-in, workspace membership authorization,
-workspace-scoped collaboration endpoints, activity/notes/comments/invitations, and
-workspace-scoped insights. Set a strong `JWT_SECRET` before starting the API.
+## Local development
 
-The public marketing landing page is available at `/`. The authenticated application
-shell is available at `/app`. The landing page uses the Forest & Chalk palette and a
-minimal editorial product demonstration. The GhostFibers effect remains an optional
-future enhancement and is intentionally not part of the authenticated application shell.
+### Prerequisites
 
-## Deployment configuration
+- Node.js 20 or newer
+- npm 10 or newer
+- MongoDB locally or a MongoDB Atlas database
 
-Required backend variables:
+### Setup
 
-- `MONGODB_URI`: MongoDB connection string.
-- `JWT_SECRET`: long, random secret used to sign access tokens.
-- `PORT`: optional HTTP port, default `3000`.
-- `CLIENT_ORIGIN`: production frontend origin, or a comma-separated list of allowed
-  origins when frontend and API are deployed separately.
+```bash
+git clone https://github.com/YOUR_USERNAME/relay.git
+cd relay
+npm install
+cp .env.example .env
+```
 
-The API refuses to start without `MONGODB_URI` or `JWT_SECRET` when authentication
-is used. Never commit `.env` or use the example secret in a deployed environment.
+Update `.env` with a real database connection and a strong secret:
 
-### Phase 1 deployment checklist
+```env
+PORT=3000
+MONGODB_URI=mongodb://127.0.0.1:27017/relay
+CLIENT_ORIGIN=http://localhost:5174
+JWT_SECRET=replace-with-a-random-secret-at-least-32-characters-long
+```
 
-1. Provision MongoDB Atlas and allow only the deployment provider's outbound access.
-2. Set `MONGODB_URI`, a random `JWT_SECRET` of at least 32 characters, `CLIENT_ORIGIN`,
-   and the provider-provided `PORT`.
-3. Build the frontend with `npm run build`; serve `frontend/dist` from the frontend
-   host and run the API with `npm start` from the repository root.
-4. Configure the frontend host to proxy `/api` to the backend, or use the same origin.
-5. Verify `/api/health`, `/api/readiness`, registration, sign-in, task creation, and
-   task detail editing before sharing the URL.
+Start the application:
 
-The API limits JSON request bodies to 100 KB, applies baseline security headers,
-restricts CORS to `CLIENT_ORIGIN`, and rate-limits registration/sign-in attempts.
-Authentication tokens are currently stored in browser local storage; use HTTPS and
-plan an HTTP-only cookie migration before handling sensitive production data.
+```bash
+npm run dev
+```
 
-### Render deployment
+Open:
 
-This repository includes a [`render.yaml`](./render.yaml) Blueprint for the
-`relay-api` Node web service. Render does not accept a static-site service in this
-Blueprint schema, so create the frontend as a separate Render Static Site.
+- Frontend: http://localhost:5174
+- API: http://localhost:3000
+- API health: http://localhost:3000/api/health
+- API readiness: http://localhost:3000/api/readiness
 
-1. Push the repository to GitHub and create a new Render Blueprint from that repository.
-2. Set `MONGODB_URI` and `JWT_SECRET` on `relay-api`.
-3. Deploy `relay-api`, then create a Render **Static Site** from the same repository:
-   use build command `npm ci && npm run build --workspace frontend` and publish
-   directory `frontend/dist`.
-4. Set `VITE_API_URL` on the static site to the API URL (for example
-   `https://relay-api.onrender.com`) and redeploy the frontend.
-5. Set `CLIENT_ORIGIN` on `relay-api` to the exact frontend URL, then redeploy the API.
-6. Confirm the API health check, frontend landing page, registration, sign-in, and
-   task editing.
+## Commands
 
-Render's free web services can sleep after inactivity. Use a paid instance or an
-external uptime monitor if the application needs consistently low-latency requests.
+Run these from the repository root:
 
-CI runs `npm ci`, the backend test suite, and the frontend production build on every
-push and pull request.
+```bash
+npm run dev       # Start frontend and backend together
+npm test          # Run backend tests
+npm run build     # Create the production frontend build
+npm start         # Start the backend production server
+```
+
+## API surface
+
+### Public
+
+```text
+GET  /api/health
+GET  /api/readiness
+POST /api/account/register
+POST /api/account/signin
+```
+
+### Authenticated and workspace-scoped
+
+```text
+GET    /api/tasks
+POST   /api/tasks
+PATCH  /api/tasks/:id
+DELETE /api/tasks/:id
+GET    /api/focus
+GET    /api/insights
+GET    /api/collaboration/activity
+GET    /api/collaboration/notes
+POST   /api/collaboration/notes
+GET    /api/collaboration/tasks/:taskId/comments
+POST   /api/collaboration/tasks/:taskId/comments
+POST   /api/collaboration/invitations
+```
+
+Protected requests use:
+
+```text
+Authorization: Bearer <token>
+x-workspace-id: <workspace-id>
+```
+
+## Deployment on Vercel
+
+Relay supports a single Vercel project. Vercel serves the Vite frontend and
+routes `/api/*` to the Express serverless function in `api/index.mjs`.
+
+1. Push this repository to GitHub.
+2. Go to https://vercel.com/new and import the repository.
+3. Keep the project root at the repository root.
+4. Add these Production environment variables:
+
+   ```text
+   MONGODB_URI=your MongoDB Atlas connection string
+   JWT_SECRET=your random secret with at least 32 characters
+   CLIENT_ORIGIN=https://your-project.vercel.app
+   ```
+
+5. Leave `VITE_API_URL` unset because the deployed frontend uses same-origin
+   `/api` requests.
+6. Deploy and verify:
+
+   ```text
+   https://your-project.vercel.app/api/health
+   https://your-project.vercel.app/api/readiness
+   ```
+
+In MongoDB Atlas, configure Network Access so the Vercel deployment can connect.
+For an initial prototype, `0.0.0.0/0` is commonly used; restrict database access
+further when your hosting/network setup supports stable outbound IPs.
+
+## Deployment on Render
+
+The repository includes `render.yaml` for the backend API. Render's Blueprint
+schema does not provision the Vite static site here, so create the frontend as a
+separate Render Static Site:
+
+- Build command: `npm ci && npm run build --workspace frontend`
+- Publish directory: `frontend/dist`
+- Frontend variable: `VITE_API_URL=https://your-api.onrender.com`
+- Backend variable: `CLIENT_ORIGIN=https://your-frontend.onrender.com`
+
+## Security and operational notes
+
+- `.env` is ignored and must never be committed.
+- `JWT_SECRET` must be at least 32 characters in deployed environments.
+- CORS is restricted using `CLIENT_ORIGIN`.
+- JSON request bodies are limited to 100 KB.
+- Authentication attempts are rate-limited.
+- Baseline security response headers are enabled.
+- MongoDB readiness is exposed separately from process health.
+- Authentication currently uses browser local storage for the access token.
+  HTTP-only secure cookies are recommended before handling sensitive production
+  data at scale.
+
+## Testing and quality
+
+The CI workflow runs:
+
+```bash
+npm ci
+npm test
+npm run build
+```
+
+Before deploying, verify registration, sign-in, task creation, task detail
+editing, Focus Queue behavior, workspace isolation, and mobile layouts.
+
+## License
+
+This project is currently distributed without a published open-source license.
