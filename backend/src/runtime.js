@@ -8,6 +8,7 @@ import { User, Workspace, Membership, Invitation, Activity, Note, Comment } from
 import { requireAuth, requireWorkspace } from "./auth.js";
 import { createAccountRouter, createCollaborationRouter } from "./account-routes.js";
 import { createInsightsRouter } from "./insights-routes.js";
+import { createMailer } from "./mailer.js";
 
 let appPromise;
 
@@ -38,14 +39,15 @@ async function createRuntimeApp() {
   };
 
   const authMiddleware = requireAuth({ User, Membership });
+  const mailer = createMailer();
   const scopedAuth = (request, response, next) => authMiddleware(request, response, (error) => {
     if (error) return next(error);
     return requireWorkspace(request, response, next);
   });
   const app = createApp({ getDatabaseState, taskRepository, authMiddleware: scopedAuth });
-  app.use("/api/account", createAccountRouter({ User, Workspace, Membership }));
+  app.use("/api/account", createAccountRouter({ User, Workspace, Membership, requireAuthMiddleware: authMiddleware }));
   app.use("/api/collaboration", createCollaborationRouter({
-    Workspace, Membership, Invitation, Activity, Note, Comment, User, requireAuthMiddleware: scopedAuth
+    Workspace, Membership, Invitation, Activity, Note, Comment, User, requireAuthMiddleware: scopedAuth, authOnlyMiddleware: authMiddleware, mailer
   }));
   app.use("/api/insights", createInsightsRouter({ Task, Activity, requireAuthMiddleware: scopedAuth }));
   await connectDatabase(process.env.MONGODB_URI);
