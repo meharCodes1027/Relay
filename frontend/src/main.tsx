@@ -157,6 +157,7 @@ function App() {
   );
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [activeView, setActiveView] = useState<View>("Focus");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -331,7 +332,8 @@ function App() {
           <p>{authMode === "signin" ? "Sign in to keep your team moving." : "Start making progress visible."}</p>
           {authMode === "register" && <><label>Your name<input name="name" required autoComplete="name" /></label><label>Workspace name<input name="workspaceName" placeholder="Northstar" autoComplete="organization" /></label></>}
           <label>Email<input name="email" type="email" required autoComplete="email" /></label>
-          <label>Password<input name="password" type="password" required minLength={8} autoComplete={authMode === "signin" ? "current-password" : "new-password"} /></label>
+          <label>Password<input name="password" type={showPassword ? "text" : "password"} required minLength={8} autoComplete={authMode === "signin" ? "current-password" : "new-password"} /></label>
+          <label>Password<input name="password" type={showPassword ? "text" : "password"} required minLength={8} autoComplete={authMode === "signin" ? "current-password" : "new-password"} /></label>
           {authError && <p className="error-message" role="alert">{authError}</p>}
           <button className="primary-button" type="submit" disabled={authLoading}>{authLoading ? "Working..." : authMode === "signin" ? "Sign in" : "Create account"}</button>
           <button className="auth-switch" type="button" onClick={() => { setAuthMode(authMode === "signin" ? "register" : "signin"); setAuthError(""); }}>
