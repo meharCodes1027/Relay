@@ -53,8 +53,8 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
 }
 
 const navigation: { label: View; icon: string }[] = [
-  { label: "Focus", icon: "◎" },
   { label: "Projects", icon: "▣" },
+  { label: "Focus", icon: "◎" },
   { label: "Inbox", icon: "⌁" },
   { label: "Insights", icon: "◒" }
 ];
@@ -72,7 +72,7 @@ function LandingPage() {
           <a href="#principles">Principles</a>
           <a href="/app">Sign in</a>
         </nav>
-        <a className="landing-nav-cta" href="/app">Open workspace <span aria-hidden="true">↗</span></a>
+        <a className="landing-nav-cta" href="/app?mode=register">Get started <span aria-hidden="true">↗</span></a>
       </header>
 
       <main>
@@ -84,7 +84,7 @@ function LandingPage() {
               Relay gives small teams a clear view of work that needs attention, why it is slowing down, and what to do next.
             </p>
             <div className="landing-actions">
-              <a className="landing-primary-button" href="/app">Start with your workspace <span aria-hidden="true">→</span></a>
+              <a className="landing-primary-button" href="/app?mode=register">Start with your workspace <span aria-hidden="true">→</span></a>
               <a className="landing-text-link" href="#how-it-works">See how it works <span aria-hidden="true">↓</span></a>
             </div>
             <p className="landing-note"><span aria-hidden="true">✦</span> Calm project clarity, without the noise.</p>
@@ -139,7 +139,7 @@ function LandingPage() {
         <section className="landing-final-cta">
           <p className="landing-kicker"><span className="kicker-line" /> Start with the work in front of you</p>
           <h2>A clearer next step<br /><em>is closer than it looks.</em></h2>
-          <a className="landing-primary-button" href="/app">Open your workspace <span aria-hidden="true">→</span></a>
+          <a className="landing-primary-button" href="/app?mode=register">Open your workspace <span aria-hidden="true">→</span></a>
         </section>
       </main>
       <footer className="landing-footer"><a className="landing-brand" href="/"><span className="brand-mark brand-mark--dark" aria-hidden="true">R</span><span>relay</span></a><span>Make progress visible.</span><span>© 2026 Relay</span></footer>
@@ -149,9 +149,12 @@ function LandingPage() {
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem("relay_token") ?? "");
+  const [userName, setUserName] = useState(() => localStorage.getItem("relay_user_name") ?? "");
   const [workspaceId, setWorkspaceId] = useState(() => localStorage.getItem("relay_workspace") ?? "");
   const [workspaceName, setWorkspaceName] = useState(() => localStorage.getItem("relay_workspace_name") ?? "Workspace");
-  const [authMode, setAuthMode] = useState<"signin" | "register">("signin");
+  const [authMode, setAuthMode] = useState<"signin" | "register">(
+    () => new URLSearchParams(window.location.search).get("mode") === "register" ? "register" : "signin"
+  );
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [activeView, setActiveView] = useState<View>("Focus");
@@ -165,6 +168,12 @@ function App() {
   const [focusItems, setFocusItems] = useState<FocusItem[]>([]);
   const [insights, setInsights] = useState<InsightReport | null>(null);
   const [activity, setActivity] = useState<Activity[]>([]);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
+  const [inviteStatus, setInviteStatus] = useState("");
+  const [teamNote, setTeamNote] = useState("");
+  const [teamNoteStatus, setTeamNoteStatus] = useState("");
 
   const apiHeaders = useMemo(
     () => ({ Authorization: `Bearer ${token}`, "x-workspace-id": workspaceId }),
@@ -174,6 +183,16 @@ function App() {
   useEffect(() => {
     if (!token) return;
     const headers = apiHeaders;
+    apiFetch("/api/account/me", { headers })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load account");
+        return response.json();
+      })
+      .then((data: { user: { name: string } }) => {
+        setUserName(data.user.name);
+        localStorage.setItem("relay_user_name", data.user.name);
+      })
+      .catch(() => undefined);
     apiFetch("/api/tasks", { headers })
       .then(async (response) => {
         if (!response.ok) {
@@ -225,6 +244,29 @@ function App() {
   }, [token, workspaceId]);
 
   useEffect(() => {
+    if (!token) return;
+    const inviteToken = new URLSearchParams(window.location.search).get("invite");
+    if (!inviteToken) return;
+    apiFetch(`/api/collaboration/invitations/${inviteToken}/accept`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }
+    })
+      .then(async (response) => {
+        const data = await response.json() as { workspace?: { _id?: string; id?: string; name: string }; error?: string };
+        if (!response.ok) throw new Error(data.error ?? "Unable to accept invitation");
+        if (data.workspace) {
+          const id = data.workspace.id ?? data.workspace._id ?? "";
+          localStorage.setItem("relay_workspace", id);
+          localStorage.setItem("relay_workspace_name", data.workspace.name);
+          setWorkspaceId(id);
+          setWorkspaceName(data.workspace.name);
+        }
+        window.history.replaceState({}, "", "/app");
+      })
+      .catch((error: unknown) => setAuthError(error instanceof Error ? error.message : "Unable to accept invitation"));
+  }, [token]);
+
+  useEffect(() => {
     if (!showNewTask && !selectedTask) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -262,6 +304,10 @@ function App() {
       }
       if (!response.ok || !data.token) throw new Error(data.error ?? "Authentication failed");
       localStorage.setItem("relay_token", data.token);
+      if (data.user?.name) {
+        localStorage.setItem("relay_user_name", data.user.name);
+        setUserName(data.user.name);
+      }
       if (data.workspace) {
         localStorage.setItem("relay_workspace", data.workspace.id);
         localStorage.setItem("relay_workspace_name", data.workspace.name);
@@ -380,8 +426,48 @@ function App() {
     setWorkspaceName("Workspace");
   }
 
+  async function sendInvitation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setInviteStatus("");
+    const response = await apiFetch("/api/collaboration/invitations", {
+      method: "POST",
+      headers: { ...apiHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ email: inviteEmail, role: inviteRole })
+    });
+    const data = await response.json() as { error?: string; email?: string };
+    if (!response.ok) {
+      setInviteStatus(data.error ?? "The invitation could not be sent.");
+      return;
+    }
+    setInviteStatus(`Invite sent to ${data.email ?? inviteEmail}.`);
+    setInviteEmail("");
+  }
+
+  async function addTeamNote(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTeamNoteStatus("");
+    const response = await apiFetch("/api/collaboration/notes", {
+      method: "POST",
+      headers: { ...apiHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ body: teamNote })
+    });
+    const data = await response.json() as { error?: string; note?: { _id: string; body: string; createdAt: string } };
+    if (!response.ok) {
+      setTeamNoteStatus(data.error ?? "The note could not be shared.");
+      return;
+    }
+    setTeamNote("");
+    setTeamNoteStatus("Shared with the team.");
+    setActivity((current) => [{
+      _id: `note-${data.note?._id ?? Date.now()}`,
+      action: "shared a team note",
+      createdAt: new Date().toISOString(),
+      user: { name: userName }
+    }, ...current]);
+  }
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell app-shell--${activeView.toLowerCase()}`}>
       {sidebarOpen && (
         <button
           className="sidebar-backdrop"
@@ -418,7 +504,7 @@ function App() {
                 {item.icon}
               </span>
               <span>{item.label}</span>
-              {item.label === "Focus" && <span className="nav-count">4</span>}
+              {item.label === "Focus" && <span className="nav-count">{focusItems.length}</span>}
             </button>
           ))}
         </nav>
@@ -431,9 +517,9 @@ function App() {
             <span>Help &amp; shortcuts</span>
           </button>
           <div className="user-profile">
-            <span className="user-avatar">MC</span>
+            <span className="user-avatar">{(userName || "Relay").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>
             <span className="user-details">
-              <strong>Relay member</strong>
+              <strong>{userName || "Relay member"}</strong>
               <small>{workspaceName}</small>
             </span>
             <button className="user-more" type="button" onClick={logout}>Sign out</button>
@@ -466,11 +552,11 @@ function App() {
           </div>
         </header>
 
-        <main className="content">
+        <main className={`content ${activeView === "Projects" ? "content--board" : ""}`}>
           <div className="content-heading">
             <div>
               <p className="eyebrow">Wednesday, October 29</p>
-              <h1>{activeView === "Focus" ? "Good morning, Maya." : activeView}</h1>
+              <h1>{activeView === "Focus" ? `Good morning, ${userName || "there"}.` : activeView}</h1>
               <p className="heading-description">
                 {activeView === "Focus"
                   ? "Here’s what deserves your attention today."
@@ -484,6 +570,19 @@ function App() {
 
           {activeView === "Projects" ? (
             <section className="board-section" aria-label="Project board">
+              <div className="board-cover" aria-hidden="true" />
+              <div className="board-intro">
+                <div className="board-title-row">
+                  <span className="board-title-icon" aria-hidden="true">▰</span>
+                  <h2>Kanban board</h2>
+                </div>
+                <p>Keep every project moving with a clear view of what is next, active, and ready to ship.</p>
+                <ol>
+                  <li>See the full shape of your work without losing the details behind each task.</li>
+                  <li>Move priorities forward as work changes and keep progress visible to everyone.</li>
+                  <li>Use priority, due dates, and blockers to decide what deserves attention next.</li>
+                </ol>
+              </div>
               <div className="board-toolbar">
                 <input
                   className="search-input"
@@ -497,12 +596,12 @@ function App() {
               {taskError && <p className="error-message">{taskError}</p>}
               <div className="board">
                 {([
-                  ["todo", "To do"],
-                  ["in_progress", "In progress"],
-                  ["blocked", "Blocked"],
+                  ["todo", "Not started"],
+                  ["in_progress", "In development"],
+                  ["blocked", "Testing"],
                   ["done", "Done"]
                 ] as [Status, string][]).map(([status, label]) => (
-                  <div className="board-column" key={status}>
+                  <div className={`board-column board-column--${status}`} key={status}>
                     <div className="column-heading"><span>{label}</span><span>{filteredTasks.filter((task) => task.status === status).length}</span></div>
                     <div className="task-list">
                       {filteredTasks.filter((task) => task.status === status).map((task) => (
@@ -531,6 +630,9 @@ function App() {
                         </article>
                       ))}
                     </div>
+                    <button className="board-add-button" type="button" onClick={() => setShowNewTask(true)}>
+                      <span aria-hidden="true">+</span> Add task
+                    </button>
                   </div>
                 ))}
               </div>
@@ -563,9 +665,27 @@ function App() {
             </section>
           ) : activeView === "Inbox" ? (
             <section className="inbox-panel" aria-label="Workspace inbox">
-              <div className="panel-heading"><h2>Team activity</h2><span>{activity.length} events</span></div>
-              <p className="muted-copy">Comments, notes, and invitations will appear here as your team collaborates.</p>
-              {activity.slice(0, 5).map((event) => <div className="activity-row" key={event._id}><span className="activity-dot" /><span>{event.action}</span><time>{new Date(event.createdAt).toLocaleDateString()}</time></div>)}
+              <div className="panel-heading">
+                <div><p className="modal-kicker">Team</p><h2>Team activity</h2></div>
+                <button className="secondary-button" type="button" onClick={() => setShowInvite(true)}>Invite teammate</button>
+              </div>
+              <form className="team-note-form" onSubmit={addTeamNote}>
+                <label htmlFor="team-note">Share a quick team note</label>
+                <textarea id="team-note" value={teamNote} onChange={(event) => setTeamNote(event.target.value)} maxLength={5000} rows={3} placeholder="What should the team know?" />
+                <div className="team-note-actions">
+                  {teamNoteStatus && <span className="form-status">{teamNoteStatus}</span>}
+                  <button className="primary-button" type="submit" disabled={!teamNote.trim()}>Share note</button>
+                </div>
+              </form>
+              {activity.length === 0 ? (
+                <p className="muted-copy">Comments, notes, and invitations will appear here as your team collaborates.</p>
+              ) : activity.slice(0, 10).map((event) => (
+                <div className="activity-row" key={event._id}>
+                  <span className="activity-dot" />
+                  <span>{event.user?.name ? `${event.user.name} ${event.action}` : event.action}</span>
+                  <time>{new Date(event.createdAt).toLocaleDateString()}</time>
+                </div>
+              ))}
             </section>
           ) : (
             <section className="empty-state" aria-label={`${activeView} preview`}>
@@ -576,6 +696,17 @@ function App() {
           )}
         </main>
       </div>
+      {showInvite && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="invite-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowInvite(false); }}>
+          <form className="task-modal" onSubmit={sendInvitation}>
+            <div className="modal-heading"><h2 id="invite-title">Invite a teammate</h2><button type="button" onClick={() => setShowInvite(false)} aria-label="Close invite dialog">×</button></div>
+            <label>Email address<input type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} required placeholder="teammate@example.com" /></label>
+            <label>Role<select value={inviteRole} onChange={(event) => setInviteRole(event.target.value as "member" | "admin")}><option value="member">Member</option><option value="admin">Admin</option></select></label>
+            {inviteStatus && <p className="form-status" role="status">{inviteStatus}</p>}
+            <button className="primary-button" type="submit" disabled={!inviteEmail.trim()}>Send invitation</button>
+          </form>
+        </div>
+      )}
       {showNewTask && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="new-task-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowNewTask(false); }}>
           <form className="task-modal" onSubmit={createTask}>
@@ -608,9 +739,64 @@ function App() {
   );
 }
 
+function InvitePage() {
+  const pathParts = window.location.pathname.split("/").filter(Boolean);
+  const token = pathParts[pathParts.length - 1] ?? "";
+  const [status, setStatus] = useState("Loading invitation...");
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+
+  useEffect(() => {
+    apiFetch(`/api/collaboration/invitations/${token}`)
+      .then(async (response) => {
+        const data = await response.json() as { invitation?: { email: string; workspace: { name: string } }; error?: string };
+        if (!response.ok) throw new Error(data.error ?? "This invitation is invalid");
+        setWorkspaceName(data.invitation?.workspace.name ?? "Relay workspace");
+        setInviteEmail(data.invitation?.email ?? "");
+        setStatus("You have been invited.");
+      })
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "This invitation is invalid"));
+  }, [token]);
+
+  async function acceptInvitation() {
+    const authToken = localStorage.getItem("relay_token");
+    if (!authToken) {
+      window.location.href = `/app?mode=signin&invite=${encodeURIComponent(token)}`;
+      return;
+    }
+    const response = await apiFetch(`/api/collaboration/invitations/${token}/accept`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${authToken}`, "content-type": "application/json" }
+    });
+    const data = await response.json() as { workspace?: { _id?: string; id?: string; name: string }; error?: string };
+    if (!response.ok) {
+      setStatus(data.error ?? "Unable to accept invitation");
+      return;
+    }
+    if (data.workspace) {
+      localStorage.setItem("relay_workspace", data.workspace.id ?? data.workspace._id ?? "");
+      localStorage.setItem("relay_workspace_name", data.workspace.name);
+    }
+    window.location.href = "/app";
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card" aria-live="polite">
+        <div className="brand"><span className="brand-mark" aria-hidden="true">R</span><span>relay</span></div>
+        <h1>{workspaceName ? `Join ${workspaceName}.` : "Workspace invitation"}</h1>
+        <p>{status}</p>
+        {inviteEmail && <p>{inviteEmail}</p>}
+        {workspaceName && <button className="primary-button" type="button" onClick={acceptInvitation}>Accept invitation</button>}
+        <a className="auth-switch" href="/">Back to Relay</a>
+      </section>
+    </main>
+  );
+}
+
 const root = document.getElementById("root")!;
 createRoot(root).render(
   <StrictMode>
-    {window.location.pathname === "/app" ? <App /> : <LandingPage />}
+    {window.location.pathname.startsWith("/invite/") ? <InvitePage /> : window.location.pathname === "/app" ? <App /> : <LandingPage />}
   </StrictMode>
 );
