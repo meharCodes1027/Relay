@@ -20,6 +20,7 @@ data, and operational insights.
   and blocked reasons
 - Workspace insights and recent activity
 - Collaboration API foundations for notes, comments, invitations, and activity
+- SMTP-powered workspace invitations with secure, expiring acceptance links
 - Health and database-readiness endpoints
 - Responsive, keyboard-friendly interface
 
@@ -40,6 +41,7 @@ relay/
 │   ├── src/auth.js           JWT authentication and workspace authorization
 │   ├── src/task-model.js     Mongoose task schema
 │   ├── src/task-routes.js    Task CRUD and validation
+│   ├── src/mailer.js         Nodemailer invitation delivery
 │   ├── src/momentum.js       Deterministic focus-signal rules
 │   └── test/                 Node test runner coverage
 ├── api/index.mjs             Vercel serverless API entry point
@@ -74,20 +76,44 @@ JWT and workspace authorization.
 ### Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/relay.git
+git clone https://github.com/meharCodes1027/Relay.git
 cd relay
 npm install
 cp .env.example .env
 ```
 
-Update `.env` with a real database connection and a strong secret:
+Update `.env` with a real database connection and strong secrets. Local values
+can use MailHog or another local SMTP server; production values should come
+from an SMTP provider and your deployment platform's secret manager.
 
 ```env
 PORT=3000
 MONGODB_URI=mongodb://127.0.0.1:27017/relay
 CLIENT_ORIGIN=http://localhost:5174
 JWT_SECRET=replace-with-a-random-secret-at-least-32-characters-long
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=your-smtp-username
+SMTP_PASSWORD=your-smtp-password
+MAIL_FROM=Relay <no-reply@example.com>
+APP_URL=http://localhost:5174
 ```
+
+| Variable | Purpose |
+| --- | --- |
+| `PORT` | Backend HTTP port |
+| `MONGODB_URI` | MongoDB connection string |
+| `CLIENT_ORIGIN` | Allowed frontend CORS origin |
+| `JWT_SECRET` | JWT signing secret; use at least 32 random characters |
+| `VITE_API_URL` | Optional frontend API override; leave unset for same-origin deployments |
+| `SMTP_HOST` | SMTP provider hostname |
+| `SMTP_PORT` | SMTP provider port, commonly `587` or `465` |
+| `SMTP_SECURE` | Set `true` for implicit TLS, usually port `465` |
+| `SMTP_USER` | SMTP account username |
+| `SMTP_PASSWORD` | SMTP account password or app password |
+| `MAIL_FROM` | Verified sender name and address |
+| `APP_URL` | Public frontend URL used in invitation links |
 
 Start the application:
 
@@ -139,6 +165,8 @@ POST   /api/collaboration/notes
 GET    /api/collaboration/tasks/:taskId/comments
 POST   /api/collaboration/tasks/:taskId/comments
 POST   /api/collaboration/invitations
+GET    /api/collaboration/invitations/:token
+POST   /api/collaboration/invitations/:token/accept
 ```
 
 Protected requests use:
@@ -162,6 +190,13 @@ routes `/api/*` to the Express serverless function in `api/index.mjs`.
    MONGODB_URI=your MongoDB Atlas connection string
    JWT_SECRET=your random secret with at least 32 characters
    CLIENT_ORIGIN=https://your-project.vercel.app
+   SMTP_HOST=your SMTP provider hostname
+   SMTP_PORT=587
+   SMTP_SECURE=false
+   SMTP_USER=your SMTP username
+   SMTP_PASSWORD=your SMTP password or app password
+   MAIL_FROM=Relay <verified-sender@example.com>
+   APP_URL=https://your-project.vercel.app
    ```
 
 5. Leave `VITE_API_URL` unset because the deployed frontend uses same-origin
@@ -191,8 +226,12 @@ separate Render Static Site:
 ## Security and operational notes
 
 - `.env` is ignored and must never be committed.
+- `.env.*` files are ignored; only `.env.example` is intentionally tracked.
 - `JWT_SECRET` must be at least 32 characters in deployed environments.
 - CORS is restricted using `CLIENT_ORIGIN`.
+- SMTP invitation delivery requires `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+  `SMTP_PASSWORD`, `SMTP_SECURE`, `MAIL_FROM`, and `APP_URL`. These must be
+  configured as deployment environment variables; never commit them.
 - JSON request bodies are limited to 100 KB.
 - Authentication attempts are rate-limited.
 - Baseline security response headers are enabled.
@@ -203,7 +242,7 @@ separate Render Static Site:
 
 ## Testing and quality
 
-The CI workflow runs:
+Run the local quality checks before deployment:
 
 ```bash
 npm ci
