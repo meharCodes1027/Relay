@@ -103,9 +103,12 @@ export function createCollaborationRouter({ Workspace, Membership, Invitation, A
       if (request.user.email.toLowerCase() !== invitation.email) {
         return response.status(403).json({ error: "Sign in with the email address this invitation was sent to" });
       }
+      // $setOnInsert applies the invited role only when a new membership is
+      // created. An existing member (e.g. the owner) keeps their current role
+      // instead of being silently downgraded by accepting an invitation.
       await Membership.findOneAndUpdate(
         { user: request.user._id, workspace: invitation.workspace },
-        { role: invitation.role },
+        { $setOnInsert: { role: invitation.role } },
         { upsert: true, new: true }
       );
       await Activity.create({
