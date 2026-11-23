@@ -3,6 +3,28 @@ import { Router } from "express";
 const statuses = new Set(["todo", "in_progress", "blocked", "done"]);
 const priorities = new Set(["low", "medium", "high"]);
 
+// Only these fields may be written by clients. Everything else in the request
+// body (workspace, _id, createdAt, ...) is ignored so a user cannot reassign a
+// task to another workspace or tamper with server-managed fields.
+const editableFields = [
+  "title",
+  "description",
+  "status",
+  "priority",
+  "dueDate",
+  "blockedReason",
+  "nextAction",
+  "lastMeaningfulUpdate"
+];
+
+function pickEditableFields(body) {
+  const input = {};
+  for (const field of editableFields) {
+    if (body[field] !== undefined) input[field] = body[field];
+  }
+  return input;
+}
+
 function validateTaskInput(body, partial = false) {
   const errors = [];
   if (!partial || body.title !== undefined) {
@@ -57,7 +79,7 @@ export function createTaskRouter({ repository }) {
         response.status(400).json({ error: "Invalid task", details: errors });
         return;
       }
-      const task = await repository.create({ ...request.body, workspace: request.workspaceId });
+      const task = await repository.create({ ...pickEditableFields(request.body), workspace: request.workspaceId });
       response.status(201).json({ task });
     } catch (error) {
       next(error);
@@ -71,7 +93,7 @@ export function createTaskRouter({ repository }) {
         response.status(400).json({ error: "Invalid task", details: errors });
         return;
       }
-      const task = await repository.update(request.params.id, request.body, request.workspaceId);
+      const task = await repository.update(request.params.id, pickEditableFields(request.body), request.workspaceId);
       if (!task) {
         response.status(404).json({ error: "Task not found" });
         return;
