@@ -103,3 +103,29 @@ test("task API enforces the same length limits as the schema", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("task API rejects malformed ids before querying the database", async () => {
+  const repository = {
+    list: async () => [],
+    create: async () => { throw new Error("unexpected"); },
+    update: async () => { throw new Error("database should not be queried"); },
+    remove: async () => { throw new Error("database should not be queried"); }
+  };
+  const server = makeServer(repository);
+  const { port } = server.address();
+
+  try {
+    const patched = await fetch(`http://127.0.0.1:${port}/api/tasks/not-an-id`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "x" })
+    });
+    assert.equal(patched.status, 400);
+    assert.deepEqual(await patched.json(), { error: "Invalid task id" });
+
+    const deleted = await fetch(`http://127.0.0.1:${port}/api/tasks/123`, { method: "DELETE" });
+    assert.equal(deleted.status, 400);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

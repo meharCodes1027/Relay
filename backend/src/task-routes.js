@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { isObjectId } from "./validation.js";
 
 const statuses = new Set(["todo", "in_progress", "blocked", "done"]);
 const priorities = new Set(["low", "medium", "high"]);
@@ -61,6 +62,14 @@ function validateTaskInput(body, partial = false) {
 
 export function createTaskRouter({ repository }) {
   const router = Router();
+
+  router.param("id", (request, response, next, id) => {
+    if (!isObjectId(id)) {
+      response.status(400).json({ error: "Invalid task id" });
+      return;
+    }
+    next();
+  });
 
   router.get("/", async (request, response, next) => {
     try {
