@@ -1952,3 +1952,7 @@ a {
 a:hover {
     opacity: 0.85;
 }
+::selection {
+    background: rgba(36, 53, 45, 0.18);
+    color: inherit;
+}
