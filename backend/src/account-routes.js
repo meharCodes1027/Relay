@@ -146,6 +146,7 @@ export function createCollaborationRouter({ Workspace, Membership, Invitation, A
     try {
       const body = typeof request.body.body === "string" ? request.body.body.trim() : "";
       if (!body) return response.status(400).json({ error: "A note is required" });
+      if (body.length > MAX_NOTE_LENGTH) return response.status(400).json({ error: `A note must be at most ${MAX_NOTE_LENGTH} characters` });
       const note = await Note.create({ workspace: request.workspaceId, author: request.user._id, body });
       await Activity.create({ workspace: request.workspaceId, user: request.user._id, action: "shared a team note", entityType: "note", entityId: note._id, metadata: { preview: body.slice(0, 120) } });
       response.status(201).json({ note });
@@ -158,7 +159,17 @@ export function createCollaborationRouter({ Workspace, Membership, Invitation, A
     try {
       const body = typeof request.body.body === "string" ? request.body.body.trim() : "";
       if (!body) return response.status(400).json({ error: "A comment is required" });
-      const comment = await Comment.create({ workspace: request.workspaceId, task: request.params.taskId, author: request.user._id, body, mentions: Array.isArray(request.body.mentions) ? request.body.mentions : [] });
+      if (body.length > MAX_COMMENT_LENGTH) return response.status(400).json({ error: `A comment must be at most ${MAX_COMMENT_LENGTH} characters` });
+      // Only keep mentions that are well-formed user ids AND belong to members of
+      // this workspace. Previously any value was stored: junk caused a Mongoose
+      // CastError (500) and people outside the workspace could be mentioned.
+      const requestedMentions = Array.isArray(request.body.mentions)
+        ? [...new Set(request.body.mentions.filter((id) => typeof id === "string" && OBJECT_ID_PATTERN.test(id)))]
+        : [];
+      const mentions = requestedMentions.length
+        ? (await Membership.find({ workspace: request.workspaceId, user: { $in: requestedMentions } }).select("user").lean()).map((membership) => membership.user)
+        : [];
+      const comment = await Comment.create({ workspace: request.workspaceId, task: request.params.taskId, author: request.user._id, body, mentions });
       await Activity.create({ workspace: request.workspaceId, user: request.user._id, action: "added a task comment", entityType: "comment", entityId: comment._id });
       response.status(201).json({ comment });
     } catch (error) { next(error); }
@@ -196,6 +207,10 @@ export function createCollaborationRouter({ Workspace, Membership, Invitation, A
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_NAME_LENGTH = 100;
 const MAX_WORKSPACE_NAME_LENGTH = 120;
+// Mirror the maxlength limits in collaboration-models.js so oversized input is a 400, not a 500.
+const MAX_NOTE_LENGTH = 5000;
+const MAX_COMMENT_LENGTH = 2000;
+const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i;
 
 // Register stores emails trimmed and lower-cased, so sign-in must apply the
 // exact same normalisation or "  Me@Example.com" would never match.
