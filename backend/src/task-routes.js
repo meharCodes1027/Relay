@@ -30,6 +30,8 @@ function validateTaskInput(body, partial = false) {
   if (!partial || body.title !== undefined) {
     if (typeof body.title !== "string" || body.title.trim().length === 0) {
       errors.push("title is required");
+    } else if (body.title.trim().length > 200) {
+      errors.push("title must be at most 200 characters");
     }
   }
   if (body.status !== undefined && !statuses.has(body.status)) {
@@ -41,13 +43,15 @@ function validateTaskInput(body, partial = false) {
   if (body.dueDate !== undefined && body.dueDate !== null && Number.isNaN(Date.parse(body.dueDate))) {
     errors.push("dueDate must be a valid date");
   }
+  // Limits mirror task-model.js so invalid input is rejected with a 400 here
+  // instead of failing later as a Mongoose validation error (500).
   for (const field of ["blockedReason", "nextAction"]) {
-    if (body[field] !== undefined && typeof body[field] !== "string") {
-      errors.push(`${field} must be a string`);
+    if (body[field] !== undefined && (typeof body[field] !== "string" || body[field].length > 500)) {
+      errors.push(`${field} must be a string with at most 500 characters`);
     }
-    if (body.description !== undefined && (typeof body.description !== "string" || body.description.length > 2000)) {
-      errors.push("description must be a string with at most 2000 characters");
-    }
+  }
+  if (body.description !== undefined && (typeof body.description !== "string" || body.description.length > 2000)) {
+    errors.push("description must be a string with at most 2000 characters");
   }
   if (body.lastMeaningfulUpdate !== undefined && body.lastMeaningfulUpdate !== null && Number.isNaN(Date.parse(body.lastMeaningfulUpdate))) {
     errors.push("lastMeaningfulUpdate must be a valid date");

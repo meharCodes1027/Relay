@@ -71,3 +71,35 @@ test("task API ignores fields clients are not allowed to write", async () => {
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("task API enforces the same length limits as the schema", async () => {
+  const repository = {
+    list: async () => [],
+    create: async (input) => ({ _id: "1", ...input }),
+    update: async () => null,
+    remove: async () => false
+  };
+  const server = makeServer(repository);
+  const { port } = server.address();
+  const post = (body) => fetch(`http://127.0.0.1:${port}/api/tasks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+
+  try {
+    const longTitle = await post({ title: "x".repeat(201) });
+    assert.equal(longTitle.status, 400);
+    assert.deepEqual((await longTitle.json()).details, ["title must be at most 200 characters"]);
+
+    const longNextAction = await post({ title: "Ok", nextAction: "x".repeat(501) });
+    assert.equal(longNextAction.status, 400);
+
+    const badDescription = await post({ title: "Ok", description: 42 });
+    assert.deepEqual((await badDescription.json()).details, [
+      "description must be a string with at most 2000 characters"
+    ]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
