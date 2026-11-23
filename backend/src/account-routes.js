@@ -11,31 +11,48 @@ export function createAccountRouter({ User, Workspace, Membership, requireAuthMi
   }
   router.post("/register", async (request, response, next) => {
     try {
-      const { email, name, password, workspaceName } = request.body;
-      if (typeof email !== "string" || typeof name !== "string" || typeof password !== "string" || password.length < 8) {
-        response.status(400).json({ error: "Name, email, and a password of at least 8 characters are required" });
+      const { password, workspaceName } = request.body;
+      const normalizedEmail = normalizeEmail(request.body.email);
+      const name = typeof request.body.name === "string" ? request.body.name.trim() : "";
+      if (!name || name.length > MAX_NAME_LENGTH) {
+        response.status(400).json({ error: `Name is required and must be at most ${MAX_NAME_LENGTH} characters` });
         return;
       }
-      const normalizedEmail = email.trim().toLowerCase();
-      if (!normalizedEmail) {
+      if (!EMAIL_PATTERN.test(normalizedEmail)) {
         response.status(400).json({ error: "A valid email address is required" });
+        return;
+      }
+      // bcrypt only uses the first 72 bytes of a password; anything longer would
+      // be silently ignored, so reject it instead of giving a false sense of security.
+      if (typeof password !== "string" || password.length < 8 || Buffer.byteLength(password) > 72) {
+        response.status(400).json({ error: "Password must be between 8 and 72 characters" });
+        return;
+      }
+      const trimmedWorkspaceName = typeof workspaceName === "string" ? workspaceName.trim() : "";
+      if (trimmedWorkspaceName.length > MAX_WORKSPACE_NAME_LENGTH) {
+        response.status(400).json({ error: `Workspace name must be at most ${MAX_WORKSPACE_NAME_LENGTH} characters` });
         return;
       }
       if (await User.exists({ email: normalizedEmail })) {
         response.status(409).json({ error: "Unable to create account with those details" });
         return;
       }
-      const user = await User.create({ email: normalizedEmail, name: name.trim(), passwordHash: await hashPassword(password) });
-      const workspace = await Workspace.create({ name: typeof workspaceName === "string" && workspaceName.trim() ? workspaceName : `${name}'s workspace` });
+      const user = await User.create({ email: normalizedEmail, name, passwordHash: await hashPassword(password) });
+      const workspace = await Workspace.create({ name: trimmedWorkspaceName || `${name}'s workspace` });
       await Membership.create({ user: user._id, workspace: workspace._id, role: "owner" });
       response.status(201).json({ token: createToken(user._id.toString()), user: { id: user._id, email: user.email, name: user.name }, workspace: { id: workspace._id, name: workspace.name } });
     } catch (error) { next(error); }
   });
   router.post("/signin", async (request, response, next) => {
     try {
-      const { email, password } = request.body;
-      const user = await User.findOne({ email: String(email).toLowerCase() });
-      if (!user || !(await verifyPassword(String(password), user.passwordHash))) {
+      const email = normalizeEmail(request.body.email);
+      const password = typeof request.body.password === "string" ? request.body.password : "";
+      if (!email || !password) {
+        response.status(400).json({ error: "Email and password are required" });
+        return;
+      }
+      const user = await User.findOne({ email });
+      if (!user || !(await verifyPassword(password, user.passwordHash))) {
         response.status(401).json({ error: "Invalid email or password" });
         return;
       }
@@ -167,4 +184,14 @@ export function createCollaborationRouter({ Workspace, Membership, Invitation, A
     } catch (error) { next(error); }
   });
   return router;
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_NAME_LENGTH = 100;
+const MAX_WORKSPACE_NAME_LENGTH = 120;
+
+// Register stores emails trimmed and lower-cased, so sign-in must apply the
+// exact same normalisation or "  Me@Example.com" would never match.
+function normalizeEmail(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
