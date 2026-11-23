@@ -78,3 +78,15 @@ test("sign-in with missing credentials returns 400", async () => {
     assert.deepEqual(await response.json(), { error: "Email and password are required" });
   });
 });
+
+test("sign-in runs a password check even when the email is unknown", async () => {
+  await withAccountServer(makeModels(), async (post) => {
+    await post("/signin", { email: "warmup@example.com", password: "password123" });
+    const started = performance.now();
+    const response = await post("/signin", { email: "nobody@example.com", password: "password123" });
+    const elapsed = performance.now() - started;
+    assert.equal(response.status, 401);
+    // bcrypt at cost 12 takes well over 20ms; an early return would take ~1ms.
+    assert.ok(elapsed > 20, `expected a bcrypt-length response, took ${elapsed.toFixed(1)}ms`);
+  });
+});

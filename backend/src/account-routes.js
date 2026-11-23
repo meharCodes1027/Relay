@@ -52,7 +52,11 @@ export function createAccountRouter({ User, Workspace, Membership, requireAuthMi
         return;
       }
       const user = await User.findOne({ email });
-      if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      // Always run one bcrypt comparison, even for unknown emails. Otherwise the
+      // response is ~250ms faster when the account does not exist, which lets an
+      // attacker discover registered emails by timing requests (user enumeration).
+      const passwordMatches = await verifyPassword(password, user?.passwordHash ?? await getDummyPasswordHash());
+      if (!user || !passwordMatches) {
         response.status(401).json({ error: "Invalid email or password" });
         return;
       }
@@ -194,4 +198,12 @@ const MAX_WORKSPACE_NAME_LENGTH = 120;
 // exact same normalisation or "  Me@Example.com" would never match.
 function normalizeEmail(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+// A real bcrypt hash (same cost as stored passwords) that no password matches,
+// created once on first use so unknown-email sign-ins cost the same as real ones.
+let dummyPasswordHash;
+function getDummyPasswordHash() {
+  dummyPasswordHash ??= hashPassword(crypto.randomBytes(32).toString("hex"));
+  return dummyPasswordHash;
 }
