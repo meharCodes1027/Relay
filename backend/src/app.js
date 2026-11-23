@@ -2,10 +2,15 @@ import cors from "cors";
 import express from "express";
 import { createTaskRouter } from "./task-routes.js";
 import { getFocusItems } from "./momentum.js";
+import { createRateLimiter } from "./rate-limit.js";
 
 export function createApp({ getDatabaseState, taskRepository, authMiddleware }) {
   const app = express();
-  const authAttempts = new Map();
+  const authRateLimit = createRateLimiter({
+    windowMs: 60_000,
+    maxAttempts: 10,
+    message: "Too many authentication attempts. Try again shortly."
+  });
 
   app.use(cors({
     origin: process.env.CLIENT_ORIGIN?.split(",").map((origin) => origin.trim()) ?? false
@@ -23,16 +28,7 @@ export function createApp({ getDatabaseState, taskRepository, authMiddleware }) 
       next();
       return;
     }
-    const now = Date.now();
-    const key = request.ip;
-    const attempts = (authAttempts.get(key) ?? []).filter((timestamp) => now - timestamp < 60_000);
-    if (attempts.length >= 10) {
-      response.status(429).json({ error: "Too many authentication attempts. Try again shortly." });
-      return;
-    }
-    attempts.push(now);
-    authAttempts.set(key, attempts);
-    next();
+    authRateLimit(request, response, next);
   });
   app.use((request, response, next) => {
     response.setHeader("X-Content-Type-Options", "nosniff");
