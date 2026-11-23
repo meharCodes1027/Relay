@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { isObjectId } from "./validation.js";
 
 const TOKEN_EXPIRY = "7d";
 
@@ -35,6 +36,10 @@ export function requireAuth({ User, Membership }) {
       }
       request.user = user;
       request.workspaceId = request.headers["x-workspace-id"];
+      if (request.workspaceId !== undefined && !isObjectId(request.workspaceId)) {
+        response.status(400).json({ error: "Invalid workspace id" });
+        return;
+      }
       if (!request.workspaceId) {
         const membership = await Membership.findOne({ user: user._id }).select("workspace role").lean();
         if (membership) {

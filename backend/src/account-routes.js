@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Router } from "express";
 import { createToken, hashPassword, verifyPassword } from "./auth.js";
+import { isObjectId } from "./validation.js";
 
 export function createAccountRouter({ User, Workspace, Membership, requireAuthMiddleware }) {
   const router = Router();
@@ -124,6 +125,10 @@ export function createCollaborationRouter({ Workspace, Membership, Invitation, A
   });
 
   router.use(requireAuthMiddleware);
+  router.param("taskId", (request, response, next, taskId) => {
+    if (!isObjectId(taskId)) return response.status(400).json({ error: "Invalid task id" });
+    next();
+  });
   router.get("/workspaces", async (request, response, next) => {
     try {
       const memberships = await Membership.find({ user: request.user._id }).populate("workspace", "name").lean();

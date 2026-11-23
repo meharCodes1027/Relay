@@ -9,6 +9,7 @@ import { requireAuth, requireWorkspace } from "./auth.js";
 import { createAccountRouter, createCollaborationRouter } from "./account-routes.js";
 import { createInsightsRouter } from "./insights-routes.js";
 import { createMailer } from "./mailer.js";
+import { escapeRegex } from "./validation.js";
 
 let appPromise;
 
@@ -29,7 +30,7 @@ async function createRuntimeApp() {
     list: async ({ search, status, workspace }) => {
       const query = {};
       if (status) query.status = status;
-      if (search) query.title = { $regex: search, $options: "i" };
+      if (search) query.title = { $regex: escapeRegex(search), $options: "i" };
       if (workspace) query.workspace = workspace;
       return Task.find(query).sort({ createdAt: -1 }).lean();
     },
